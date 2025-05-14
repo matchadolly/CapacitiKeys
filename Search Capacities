@@ -1,0 +1,105 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# 🎀 Checks for the required variables.
+if [ -z "$SPACE_ID" ]; then
+  echo '{"items":[{"title": "Configuration error", "subtitle": "Space ID not set", "valid": false}]}'
+  exit 1
+fi
+if [ -z "$API_TOKEN" ]; then
+  echo '{"items":[{"title": "Configuration error", "subtitle": "API Token not set", "valid": false}]}'
+  exit 1
+fi
+
+# 🎀 Sets link protocol.
+if [ "$Open_Links_In" -eq 0 ]; then
+  PROTOCOL="capacities://"
+else
+  PROTOCOL="https://app.capacities.io/"
+fi
+
+# 🎀 Validates the query to make sure it has a minimum of 2 characters.
+query="{query}"
+if [ -z "$query" ] || [ ${#query} -lt 2 ]; then
+  echo '{"items":[{"title": "Enter a longer search term", "subtitle": "At least 2 characters are required", "valid": false}]}'
+  exit 0
+fi
+
+# 🎀 Builds the JSON payload.
+payload=$(jq -n --arg q "$query" --arg sid "$SPACE_ID" '{
+  mode: "fullText",
+  searchTerm: $q,
+  spaceIds: [$sid]
+}')
+
+# 🎀 Executes the API call.
+# 🎀 Gets both the body and the HTTP status code.
+tmp_resp=$(mktemp)
+http_code=$(curl -s -o "$tmp_resp" -w "%{http_code}" \
+  -X POST "https://api.capacities.io/search" \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$payload")
+response_body=$(cat "$tmp_resp")
+rm "$tmp_resp"
+
+# 🎀 Gets the object types' mapping.
+# 🎀 It uses the cache file created by the "Set object types" action, if not present, just the UUIDs will be shown.
+# 🎀 Run the "Set object types" action to create the cache file to map object types properly.
+data_dir="${alfred_workflow_data:-$HOME/Library/Application Support/Alfred/Workflow Data/$alfred_workflow_bundleid}"
+cache_file="$data_dir/Object_Types.txt"
+if [[ -f "$cache_file" ]]; then
+  raw_mapping=$(<"$cache_file")
+else
+  raw_mapping=""
+fi
+
+# 🎀 Success path (HTTP 200)
+# 🎀 Processes the API response and object types' mapping, and outputs JSON for Alfred.
+# 🎀 Output: title (object name) and subtitle (object type).
+if [ "$http_code" -eq 200 ]; then
+  echo "$response_body" | jq \
+  --arg raw "$raw_mapping" \
+  --arg proto "$PROTOCOL" \
+  '
+    def to_map(str):
+      if (str|length)==0 then {} else
+        (str
+          | split("\n")
+          | map(select(length>0)
+              | capture("^(?<name>[^:]+):\\s*(?<id>[A-Za-z0-9-]+)$")
+              | {(.id): .name})
+          | add)
+      end;
+    (to_map($raw)) as $custom
+    | if .results then
+        { items:
+            (.results | map({
+              title: .title,
+              subtitle: ("Type: " + (if .structureId == "RootPage" then "Page" else ($custom[.structureId] // .structureId) end)),
+              arg: ($proto + .spaceId + "/" + .id),
+              valid: true
+            }))
+        }
+      else
+        { items: [ {title:"No results found", valid:false} ] }
+      end
+  '
+  exit 0
+fi
+
+# 🎀 Error path (not HTTP 200)
+error_message=$(echo "$response_body" | jq -r '.message // empty' 2>/dev/null || true)
+case "$http_code" in
+  400) reason="Bad request" ;;
+  401) reason="Unauthorized" ;;
+  404) reason="Not found" ; error_message=${error_message:-"The requested resource doesn't exist."} ;;
+  429) reason="Too many requests" ;;
+  500) reason="Something went wrong" ; error_message=${error_message:-"Something went wrong on Capacities' side."} ;;
+  503) reason="Temporarily unavailable" ; error_message=${error_message:-"The API is inactive or under maintenance."} ;;
+  555) reason="Temporarily unavailable" ; error_message=${error_message:-"Capacities is being updated. The API is temporarily unavailable."} ;;
+  *)   reason="Unclassified" ; error_message=${error_message:-"An unexpected error occurred."} ;;
+esac
+printf '{"items":[{"title":"Error: %s %s","subtitle":"%s","valid":false}]}' "$http_code" "$reason" "$error_message"
+exit 1
