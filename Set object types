@@ -1,0 +1,64 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# 🎀 Checks for the required variables.
+if [ -z "$SPACE_ID" ]; then
+  echo '{"items":[{"title": "Configuration error", "subtitle": "Space ID not set", "valid": false}]}'
+  exit 1
+fi
+if [ -z "$API_TOKEN" ]; then
+  echo '{"items":[{"title": "Configuration error", "subtitle": "API Token not set", "valid": false}]}'
+  exit 1
+fi
+
+# 🎀 Sets the cache location for object types.
+data_dir="${alfred_workflow_data:-$HOME/Library/Application Support/Alfred/Workflow Data/$alfred_workflow_bundleid}"
+mkdir -p "$data_dir"
+cache_file="$data_dir/Object_Types.txt"
+
+# 🎀 Executes the API call.
+# 🎀 Gets both the body and the HTTP status code.
+tmp_resp=$(mktemp)
+http_code=$(curl -s -o "$tmp_resp" -w "%{http_code}" \
+  -G "https://api.capacities.io/space-info" \
+  --data-urlencode "spaceid=${SPACE_ID}" \
+  -H "Authorization: Bearer ${API_TOKEN}")
+response_body=$(cat "$tmp_resp")
+rm "$tmp_resp"
+
+# 🎀 Success path (HTTP 200)
+if [[ "$http_code" == "200" ]]; then
+  mapping=$(echo "$response_body" | jq -r '.structures[] | select(.title) | "\(.title): \(.id)"' | sort || true)
+  printf '%s\n' "$mapping" > "$cache_file"
+  count=$(printf '%s\n' "$mapping" | grep -c '^' || true)
+  jq -n --arg count "$count" '{
+      items:[{
+        title:"Object types loaded",
+        subtitle:($count + " object types set"),
+        valid:false
+      }]
+    }'
+  exit 0
+fi
+
+# 🎀 Error path (not HTTP 200)
+error_message=$(echo "$response_body" | jq -r '.message // empty' 2>/dev/null || true)
+case "$http_code" in
+  400) reason="Bad request" ;;
+  401) reason="Unauthorized" ;;
+  404) reason="Not found" ; error_message=${error_message:-"The requested resource doesn't exist."} ;;
+  429) reason="Too many requests" ;;
+  500) reason="Something went wrong" ; error_message=${error_message:-"Something went wrong on Capacities' side."} ;;
+  503) reason="Temporarily unavailable" ; error_message=${error_message:-"The API is inactive or under maintenance."} ;;
+  555) reason="Temporarily unavailable" ; error_message=${error_message:-"Capacities is being updated. The API is temporarily unavailable."} ;;
+  *)   reason="Unclassified" ; error_message=${error_message:-"An unexpected error occurred."} ;;
+esac
+jq -n --arg http "$http_code" --arg reason "$reason" --arg msg "$error_message" '{
+  items:[{
+    title:("Error: " + $http + " " + $reason),
+    subtitle:$msg,
+    valid:false
+  }]
+}'
+exit 1
