@@ -1,0 +1,58 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# 🎀 Checks for the required variables.
+if [ -z "$SPACE_ID" ]; then
+  echo '{"items":[{"title": "Configuration error", "subtitle": "Space ID not set", "valid": false}]}'
+  exit 1
+fi
+if [ -z "$API_TOKEN" ]; then
+  echo '{"items":[{"title": "Configuration error", "subtitle": "API Token not set", "valid": false}]}'
+  exit 1
+fi
+
+# 🎀 Reads the URL from the input, or from the clipboard if no argument is provided.
+url="${1:-$(pbpaste)}"
+
+# 🎀 Builds the JSON payload.
+payload=$(jq -n --arg url "$url" --arg spaceId "$SPACE_ID" '{
+  spaceId: $spaceId,
+  url: $url,
+  titleOverwrite: "",
+  descriptionOverwrite: "",
+  tags: [],
+  mdText: ""
+}')
+
+# 🎀 Executes the API call.
+# 🎀 Gets both the body and the HTTP status code.
+tmp_resp=$(mktemp)
+http_code=$(curl -s -o "$tmp_resp" -w "%{http_code}" \
+  -X POST "https://api.capacities.io/save-weblink" \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$payload")
+response_body=$(cat "$tmp_resp")
+rm "$tmp_resp"
+
+# 🎀 Success path (HTTP 200)
+if [[ "$http_code" == "200" ]]; then
+  echo "Weblink saved: $url"
+  exit 0
+fi
+
+# 🎀 Error path (not HTTP 200)
+error_message=$(echo "$response_body" | jq -r '.message // empty' 2>/dev/null || true)
+case "$http_code" in
+  400) reason="Bad request" ;;
+  401) reason="Unauthorized" ;;
+  404) reason="Not found" ; error_message=${error_message:-"The requested resource doesn't exist."} ;;
+  429) reason="Too many requests" ;;
+  500) reason="Something went wrong" ; error_message=${error_message:-"Something went wrong on Capacities' side."} ;;
+  503) reason="Temporarily unavailable" ; error_message=${error_message:-"The API is inactive or under maintenance."} ;;
+  555) reason="Temporarily unavailable" ; error_message=${error_message:-"Capacities is being updated. The API is temporarily unavailable."} ;;
+  *)   reason="Unclassified" ; error_message=${error_message:-"An unexpected error occurred."} ;;
+esac
+printf "Error: %s %s. %s\n" "$http_code" "$reason" "$error_message"
+exit 1
