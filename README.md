@@ -26,9 +26,9 @@ An Alfred workflow: Dinky doodads to (maybe) improve your Capacities.io experien
 
 ## Usage
 ### [Search Capacities](https://github.com/matchadolly/CapacitiKeys/blob/f472cbc7dc1a5b285963ad550b6da3ab331ec946/Search%20Capacities)
-Type your chosen keyword followed by your search query, e.g. "cs python". The matching objects will be displayed, with the object type listed underneath. Click on an object to open it in the app or browser, depending on what you choose in the config.
+Type your chosen _keyword_ followed by your search query, e.g. "_cs_ python". The matching objects will be displayed, with the object type listed underneath. Click on an object to open it in the app or browser, depending on what you choose in the config.
 ### [Add weblink](https://github.com/matchadolly/CapacitiKeys/blob/f472cbc7dc1a5b285963ad550b6da3ab331ec946/Add%20weblink)
-Type your chosen keyword followed by the weblink, e.g. "cw https://github.com/". Press enter to send the weblink to Capacities. If no input is provided, the workflow will attempt to get the URL of the front browser; if a weblink still cannot be obtained, the workflow will attempt to get the weblink from your clipboard. Note that your input or your clipboard, if you did not provide an input, will have to contain just the URL and nothing else for the workflow to work.
+Type your chosen _keyword_ followed by the weblink, e.g. "_cw_ https://github.com/". Press enter to send the weblink to Capacities. If no input is provided, the workflow will attempt to get the URL of the front browser; if a weblink still cannot be obtained, the workflow will attempt to get the weblink from your clipboard. Note that your input or your clipboard, if you did not provide an input, will have to contain just the URL and nothing else for the workflow to work.
 ### [Set object types (cset)](https://github.com/matchadolly/CapacitiKeys/blob/f472cbc7dc1a5b285963ad550b6da3ab331ec946/Set%20object%20types)
 This just has to be run once when the workflow is first installed, or when you create a new object type. As mentioned above: Open the Alfred launcher and type in the keyword "cset". Select the action "Set object types" and wait until "Object types loaded" shows up. If search results have an object type with a random string of numbers and letters, it's probably because you haven't run this yet.
 
